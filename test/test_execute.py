@@ -45,31 +45,6 @@ def test_run_executable_async_threadpool_callback_failure(temp_executable: Path)
         assert f"Callback failed: , url: {TEST_CALLBACK_URL}" in str(exc.value)
 
 
-def test_run_executable_async_worker_delay(monkeypatch, temp_executable: Path):
-    """Worker mode: schedules Celery .delay without HTTP calls."""
-    with temp_executable_env(ExecutorType.WORKER) as exec_dir:
-        target_exe = exec_dir / temp_executable.name
-        target_exe.write_text(temp_executable.read_text())
-        target_exe.chmod(0o755)
-
-        calls = []
-        import lso.execute as exec_mod  # noqa: PLC0415
-
-        monkeypatch.setattr(
-            exec_mod.run_executable_proc_task,
-            "delay",
-            lambda job_id, path, args, callback: calls.append((job_id, path, args, callback)),
-        )
-
-        job_id = run_executable_async(target_exe, ["a", "b"], TEST_CALLBACK_URL)
-        assert len(calls) == 1
-        called_job_id, called_path, called_args, called_callback = calls[0]
-        assert called_job_id == str(job_id)
-        assert called_path == str(target_exe)
-        assert called_args == ["a", "b"]
-        assert called_callback == TEST_CALLBACK_URL
-
-
 @pytest.mark.parametrize("args", [[], ["x"], ["1", "2", "3"]])
 def test_run_executable_sync_various_args(temp_executable: Path, args):
     """Sync helper accepts different arg lists and returns correct status."""

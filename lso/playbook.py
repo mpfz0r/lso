@@ -70,15 +70,4 @@ def run_playbook(
         if settings.TESTING:
             executor_handle.result()
 
-    elif settings.EXECUTOR == ExecutorType.WORKER:
-        run_playbook_proc_task.delay(
-            str(job_id),
-            str(playbook_path),
-            extra_vars,
-            inventory,
-            callback_str,
-            progress_str,
-            progress_is_incremental=progress_is_incremental,
-        )
-
     return job_id

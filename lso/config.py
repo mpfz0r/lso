@@ -25,7 +25,6 @@ from pydantic_settings import BaseSettings
 class ExecutorType(Enum):
     """Enum representing the types of executors available for task execution."""
 
-    WORKER = "celery"
     THREADPOOL = "threadpool"
 
 

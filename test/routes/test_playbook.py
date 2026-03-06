@@ -156,33 +156,7 @@ def test_run_playbook_threadpool_execution(client: TestClient, mocked_ansible_ru
         mock_executor.submit.assert_called_once()
 
 
-@responses.activate
-def test_run_playbook_celery_execution(client: TestClient) -> None:
-    """Test that the playbook runs with Celery when ExecutorType is WORKER."""
-    with temporary_executor(ExecutorType.WORKER):
-        responses.post(url=TEST_CALLBACK_URL, status=status.HTTP_200_OK)
-
-        params = {
-            "playbook_name": "placeholder.yaml",
-            "callback": TEST_CALLBACK_URL,
-            "inventory": {
-                "_meta": {"vars": {"host1.local": {"foo": "bar"}}},
-                "all": {"hosts": {"host1.local": None}},
-            },
-            "extra_vars": {"dry_run": True},
-        }
-
-        with patch("lso.tasks.run_playbook_proc_task.delay") as mock_celery_delay:
-            rv = client.post("/api/playbook/", json=params)
-            assert rv.status_code == status.HTTP_201_CREATED
-            response = rv.json()
-
-        assert isinstance(response, dict)
-        assert isinstance(response["job_id"], str)
-        mock_celery_delay.assert_called_once()
-
-
-@pytest.mark.parametrize("executor_type", [ExecutorType.THREADPOOL, ExecutorType.WORKER])
+@pytest.mark.parametrize("executor_type", [ExecutorType.THREADPOOL])
 def test_run_playbook_invalid_inventory(client: TestClient, executor_type: ExecutorType) -> None:
     """Test playbook execution with invalid inventory."""
     with temporary_executor(executor_type):
@@ -198,25 +172,3 @@ def test_run_playbook_invalid_inventory(client: TestClient, executor_type: Execu
 
         rv = client.post("/api/playbook/", json=params)
         assert rv.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-
-@responses.activate
-def test_run_playbook_invalid_playbook_path(client: TestClient) -> None:
-    """Test that the playbook runs fails with invalid playbook name/path."""
-    responses.post(url=TEST_CALLBACK_URL, status=status.HTTP_200_OK)
-
-    params = {
-        "playbook_name": "invalid.yaml",
-        "callback": TEST_CALLBACK_URL,
-        "inventory": {
-            "_meta": {"vars": {"host1.local": {"foo": "bar"}}},
-            "all": {"hosts": {"host1.local": None}},
-        },
-        "extra_vars": {"dry_run": True},
-    }
-
-    with patch("lso.tasks.run_playbook_proc_task.delay"):
-        rv = client.post("/api/playbook/", json=params)
-        assert rv.status_code == status.HTTP_404_NOT_FOUND
-        response = rv.json()
-        assert response["detail"] == f"Filename '{get_playbook_path(Path('invalid.yaml'))}' does not exist."

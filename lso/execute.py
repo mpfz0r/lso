@@ -42,8 +42,6 @@ def run_executable_async(executable_path: Path, args: list[str], callback: HttpU
         future = executor.submit(run_executable_proc_task, str(job_id), str(executable_path), args, callback_url)
         if settings.TESTING:
             future.result()
-    elif settings.EXECUTOR == ExecutorType.WORKER:
-        run_executable_proc_task.delay(str(job_id), str(executable_path), args, callback_url)
     return job_id
 
 
