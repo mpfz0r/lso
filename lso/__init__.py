@@ -50,19 +50,12 @@ def create_app() -> FastAPI:
         title="LSO – Link State Orchestrator",
         description=(
             "LSO is a lightweight REST API for remotely running Ansible playbooks and arbitrary executables.\n\n"
-            "It is designed to integrate with the [GÉANT Workflow Orchestrator](https://workfloworchestrator.org) "
-            "but can be used independently.\n\n"
             "## Endpoints\n\n"
             "* **default** – version information\n"
             "* **playbook** – launch Ansible playbooks\n"
             "* **execute** – run arbitrary executables\n"
         ),
         version=__version__,
-        contact={
-            "name": "GÉANT Vereniging",
-            "url": "https://www.geant.org",
-            "email": "swd@geant.org",
-        },
         license_info={
             "name": "Apache 2.0",
             "url": "https://www.apache.org/licenses/LICENSE-2.0",
