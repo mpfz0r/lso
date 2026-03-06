@@ -54,7 +54,16 @@ class ExecutableRunParams(BaseModel):
     is_async: bool = True
 
 
-@router.post("/", response_model=ExecutableRunResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=ExecutableRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Run an arbitrary executable",
+    responses={
+        status.HTTP_403_FORBIDDEN: {"description": "Executable is not marked as executable"},
+        status.HTTP_404_NOT_FOUND: {"description": "Executable not found"},
+    },
+)
 async def run_executable_endpoint(params: ExecutableRunParams) -> ExecutableRunResponse:
     """Dispatch a task to run an arbitrary executable."""
     if params.is_async:

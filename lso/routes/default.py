@@ -34,7 +34,7 @@ class Version(BaseModel):
     module: VersionString  # type: ignore[valid-type]
 
 
-@router.get("/version")
+@router.get("/version", summary="Get API and module version")
 def version() -> Version:
     """Return the version numbers of the API version, and the module version.
 

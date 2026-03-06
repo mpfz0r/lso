@@ -104,7 +104,16 @@ class PlaybookRunParams(BaseModel):
     extra_vars: dict[str, Any] = {}
 
 
-@router.post("/", response_model=PlaybookRunResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=PlaybookRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Run an Ansible playbook",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Playbook file not found"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Invalid inventory or request body"},
+    },
+)
 def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
     """Launch an Ansible playbook to modify or deploy a subscription instance.
 
