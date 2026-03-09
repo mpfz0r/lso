@@ -29,6 +29,7 @@ from pydantic import AfterValidator, BaseModel, HttpUrl
 
 from lso.config import settings
 from lso.playbook import get_playbook_path, run_playbook
+from lso.tasks import get_job_status
 
 router = APIRouter()
 
@@ -95,6 +96,22 @@ class PlaybookRunResponse(BaseModel):
     """PlaybookRunResponse domain model schema."""
 
     job_id: UUID
+
+
+class PlaybookJobStatus(BaseModel):
+    """Response model reflecting the state of a playbook job.
+
+    The fields mirror key attributes of :class:`ansible_runner.Runner`.
+    """
+
+    job_id: UUID
+    status: str
+    rc: int | None = None
+    stdout: list[str] = []
+    stats: dict[str, Any] = {}
+    canceled: bool = False
+    errored: bool = False
+    timed_out: bool = False
 
 
 class PlaybookRunParams(BaseModel):
@@ -173,3 +190,29 @@ def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
     )
 
     return PlaybookRunResponse(job_id=job_id)
+
+
+@router.get(
+    "/{job_id}",
+    response_model=PlaybookJobStatus,
+    summary="Get playbook job status",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Job not found"},
+    },
+)
+def get_playbook_job_status(job_id: UUID) -> PlaybookJobStatus:
+    """Fetch the progress or final result of a playbook run.
+
+    Returns a payload that mirrors the key attributes of the
+    :class:`ansible_runner.Runner` object associated with this job.
+
+    :param UUID job_id: Identifier of the playbook job.
+    :return PlaybookJobStatus: Current status of the job.
+    """
+    job = get_job_status(str(job_id))
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Job {job_id} not found."
+        )
+
+    return PlaybookJobStatus(job_id=job_id, **job)

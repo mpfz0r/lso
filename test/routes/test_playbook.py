@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from test.utils import temporary_executor
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 import responses
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from lso.config import ExecutorType
 from lso.playbook import get_playbook_path
+from lso.tasks import _job_store, _job_store_lock
 
 TEST_CALLBACK_URL = "https://fqdn.abc.xyz/api/resume"
 TEST_PROGRESS_URL = "https://fqdn.abc.xyz/api/progress"
@@ -207,3 +209,90 @@ def test_run_playbook_invalid_inventory(
 
         rv = client.post("/api/playbook/", json=params)
         assert rv.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+def test_get_job_status_not_found(client: TestClient) -> None:
+    """GET /api/playbook/{job_id} returns 404 for an unknown job."""
+    unknown_id = str(uuid4())
+    rv = client.get(f"/api/playbook/{unknown_id}")
+    assert rv.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_get_job_status_running(client: TestClient) -> None:
+    """GET /api/playbook/{job_id} returns running status for an in-progress job."""
+    job_id = str(uuid4())
+    with _job_store_lock:
+        _job_store[job_id] = {
+            "status": "running",
+            "rc": None,
+            "stdout": [],
+            "stats": {},
+        }
+
+    try:
+        rv = client.get(f"/api/playbook/{job_id}")
+        assert rv.status_code == status.HTTP_200_OK
+        data = rv.json()
+        assert data["job_id"] == job_id
+        assert data["status"] == "running"
+        assert data["rc"] is None
+    finally:
+        with _job_store_lock:
+            _job_store.pop(job_id, None)
+
+
+def test_get_job_status_successful(client: TestClient) -> None:
+    """GET /api/playbook/{job_id} returns full Runner-like payload for a completed job."""
+    job_id = str(uuid4())
+    with _job_store_lock:
+        _job_store[job_id] = {
+            "status": "successful",
+            "rc": 0,
+            "stdout": ["PLAY [all] ***", "TASK [debug] ***", "ok: [host1]"],
+            "stats": {"ok": {"host1": 1}},
+            "canceled": False,
+            "errored": False,
+            "timed_out": False,
+        }
+
+    try:
+        rv = client.get(f"/api/playbook/{job_id}")
+        assert rv.status_code == status.HTTP_200_OK
+        data = rv.json()
+        assert data["job_id"] == job_id
+        assert data["status"] == "successful"
+        assert data["rc"] == 0
+        assert data["stdout"] == ["PLAY [all] ***", "TASK [debug] ***", "ok: [host1]"]
+        assert data["stats"] == {"ok": {"host1": 1}}
+        assert data["canceled"] is False
+        assert data["errored"] is False
+        assert data["timed_out"] is False
+    finally:
+        with _job_store_lock:
+            _job_store.pop(job_id, None)
+
+
+def test_get_job_status_failed(client: TestClient) -> None:
+    """GET /api/playbook/{job_id} returns correct data for a failed job."""
+    job_id = str(uuid4())
+    with _job_store_lock:
+        _job_store[job_id] = {
+            "status": "failed",
+            "rc": 2,
+            "stdout": ["ERROR"],
+            "stats": {},
+            "canceled": False,
+            "errored": True,
+            "timed_out": False,
+        }
+
+    try:
+        rv = client.get(f"/api/playbook/{job_id}")
+        assert rv.status_code == status.HTTP_200_OK
+        data = rv.json()
+        assert data["status"] == "failed"
+        assert data["rc"] == 2
+        assert data["errored"] is True
+    finally:
+        with _job_store_lock:
+            _job_store.pop(job_id, None)

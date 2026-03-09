@@ -18,6 +18,7 @@ the results to a specified callback URL.
 """
 
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -30,6 +31,44 @@ from lso.config import settings
 from lso.schema import ExecutableRunResponse
 
 logger = logging.getLogger(__name__)
+
+#: In-memory store of playbook job results, keyed by ``job_id``.
+_job_store: dict[str, dict[str, Any]] = {}
+_job_store_lock = threading.Lock()
+
+
+def _register_running_job(job_id: str) -> None:
+    """Mark a job as running before the playbook starts."""
+    with _job_store_lock:
+        _job_store[job_id] = {
+            "status": "running",
+            "rc": None,
+            "stdout": [],
+            "stats": {},
+        }
+
+
+def _register_finished_job(job_id: str, runner: Runner) -> None:
+    """Persist relevant ``Runner`` attributes once the playbook completes."""
+    stdout_lines = runner.stdout.read().split("\n") if runner.stdout else []
+    stdout_lines = [line for line in stdout_lines if line.strip()]
+
+    with _job_store_lock:
+        _job_store[job_id] = {
+            "status": runner.status,
+            "rc": int(runner.rc) if runner.rc is not None else None,
+            "stdout": stdout_lines,
+            "stats": runner.stats if runner.stats else {},
+            "canceled": getattr(runner, "canceled", False),
+            "errored": getattr(runner, "errored", False),
+            "timed_out": getattr(runner, "timed_out", False),
+        }
+
+
+def get_job_status(job_id: str) -> dict[str, Any] | None:
+    """Return the stored state for *job_id*, or ``None`` if unknown."""
+    with _job_store_lock:
+        return _job_store.get(job_id)
 
 
 class CallbackFailedError(Exception):
@@ -61,7 +100,11 @@ def playbook_event_handler_factory(
             events_stdout.extend(event_data_lines)
             emit_body = events_stdout
 
-        requests.post(str(progress), json={"progress": emit_body}, timeout=settings.REQUEST_TIMEOUT_SEC)
+        requests.post(
+            str(progress),
+            json={"progress": emit_body},
+            timeout=settings.REQUEST_TIMEOUT_SEC,
+        )
         return True
 
     if progress:
@@ -69,7 +112,9 @@ def playbook_event_handler_factory(
     return None
 
 
-def playbook_finished_handler_factory(callback: str | None, job_id: str) -> Callable[[Runner], None] | None:
+def playbook_finished_handler_factory(
+    callback: str | None, job_id: str
+) -> Callable[[Runner], None] | None:
     """Create an event handler for finished Ansible playbook runs.
 
     Once Ansible runner is finished, it will call the handler method created by this factory before teardown.
@@ -90,8 +135,14 @@ def playbook_finished_handler_factory(callback: str | None, job_id: str) -> Call
             "return_code": int(runner.rc),
         }
 
-        response = requests.post(str(callback), json=payload, timeout=settings.REQUEST_TIMEOUT_SEC)
-        if not (status.HTTP_200_OK <= response.status_code < status.HTTP_300_MULTIPLE_CHOICES):
+        response = requests.post(
+            str(callback), json=payload, timeout=settings.REQUEST_TIMEOUT_SEC
+        )
+        if not (
+            status.HTTP_200_OK
+            <= response.status_code
+            < status.HTTP_300_MULTIPLE_CHOICES
+        ):
             msg = f"Callback failed: {response.text}, url: {callback}"
             raise CallbackFailedError(msg)
 
@@ -123,16 +174,25 @@ def run_playbook_proc_task(
     """
     msg = f"playbook_path: {playbook_path}, callback: {callback}"
     logger.info(msg)
-    run(
+
+    _register_running_job(job_id)
+
+    runner = run(
         playbook=playbook_path,
         inventory=inventory,
         extravars=extra_vars,
-        event_handler=playbook_event_handler_factory(progress, progress_is_incremental=progress_is_incremental),
+        event_handler=playbook_event_handler_factory(
+            progress, progress_is_incremental=progress_is_incremental
+        ),
         finished_callback=playbook_finished_handler_factory(callback, job_id),
     )
 
+    _register_finished_job(job_id, runner)
 
-def run_executable_proc_task(job_id: str, executable_path: str, args: list[str], callback: str | None) -> None:
+
+def run_executable_proc_task(
+    job_id: str, executable_path: str, args: list[str], callback: str | None
+) -> None:
     """Celery task to run an arbitrary executable and notify via callback.
 
     Executes the executable with the provided arguments and posts back the result if a callback URL is provided.
@@ -155,8 +215,14 @@ def run_executable_proc_task(job_id: str, executable_path: str, args: list[str],
             raise CallbackFailedError(message)
 
         try:
-            response = requests.post(str(callback), json=payload, timeout=settings.REQUEST_TIMEOUT_SEC)
-            if not (status.HTTP_200_OK <= response.status_code < status.HTTP_300_MULTIPLE_CHOICES):
+            response = requests.post(
+                str(callback), json=payload, timeout=settings.REQUEST_TIMEOUT_SEC
+            )
+            if not (
+                status.HTTP_200_OK
+                <= response.status_code
+                < status.HTTP_300_MULTIPLE_CHOICES
+            ):
                 msg = f"Callback failed: {response.text}, url: {callback}"
                 _raise_callback_error(msg)
         except Exception as e:
