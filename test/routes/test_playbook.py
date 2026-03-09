@@ -79,6 +79,42 @@ def test_playbook_endpoint_dict_inventory_success(
 
 
 @responses.activate
+@pytest.mark.parametrize("check", [True, False])
+@pytest.mark.parametrize("diff", [True, False])
+def test_playbook_endpoint_check_and_diff(
+    client: TestClient,
+    mocked_ansible_runner_run: Callable,
+    check: bool,
+    diff: bool,
+) -> None:
+    responses.post(url=TEST_CALLBACK_URL, status=status.HTTP_200_OK)
+
+    params = {
+        "playbook_name": "placeholder.yaml",
+        "callback": TEST_CALLBACK_URL,
+        "inventory": {
+            "_meta": {
+                "vars": {
+                    "host1_local": {"foo": "bar"},
+                }
+            },
+            "all": {"hosts": {"host1_local": None}},
+        },
+        "extra_vars": {},
+        "check": check,
+        "diff": diff,
+    }
+
+    with patch("lso.routes.playbook.ansible_runner.run", new=mocked_ansible_runner_run):
+        rv = client.post("/api/playbook/", json=params)
+        assert rv.status_code == status.HTTP_201_CREATED, rv.text
+        response = rv.json()
+
+    assert isinstance(response, dict)
+    assert isinstance(response["job_id"], str)
+
+
+@responses.activate
 def test_playbook_endpoint_str_inventory_success(
     client: TestClient, mocked_ansible_runner_run: Callable
 ) -> None:

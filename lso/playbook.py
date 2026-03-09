@@ -37,6 +37,8 @@ def run_playbook(
     progress: HttpUrl | None,
     *,
     progress_is_incremental: bool,
+    check: bool = False,
+    diff: bool = False,
 ) -> UUID:
     """Run an Ansible playbook against a specified inventory.
 
@@ -66,6 +68,8 @@ def run_playbook(
             callback_str,
             progress_str,
             progress_is_incremental=progress_is_incremental,
+            check=check,
+            diff=diff,
         )
         if settings.TESTING:
             executor_handle.result()

@@ -35,3 +35,21 @@ def test_playbook_execution() -> None:
 
     responses.assert_call_count(TEST_CALLBACK_URL, 1)
     assert callback.status == status.HTTP_200_OK
+
+
+@responses.activate
+def test_playbook_execution_with_check_and_diff() -> None:
+    callback = responses.post(TEST_CALLBACK_URL)
+    run_playbook(
+        playbook_path=Path(__file__).parent / "test-playbook.yaml",
+        extra_vars={},
+        inventory="127.0.0.1",
+        callback=TEST_CALLBACK_URL,
+        progress=TEST_PROGRESS_URL,
+        progress_is_incremental=True,
+        check=True,
+        diff=True,
+    )
+
+    responses.assert_call_count(TEST_CALLBACK_URL, 1)
+    assert callback.status == status.HTTP_200_OK

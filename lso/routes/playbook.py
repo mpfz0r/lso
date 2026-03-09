@@ -134,6 +134,10 @@ class PlaybookRunParams(BaseModel):
     #: from the workflow orchestrator, commit comments, whether this execution should be a dry run, a trouble ticket
     #: number, etc. Which extra vars are required solely depends on what inputs the playbook requires.
     extra_vars: dict[str, Any] = {}
+    #: When enabled, Ansible runs in check mode (``--check``), simulating changes without applying them.
+    check: bool = False
+    #: When enabled, Ansible shows file diffs (``--diff``) for any template or file changes.
+    diff: bool = False
 
 
 @router.get(
@@ -187,6 +191,8 @@ def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
         callback=params.callback,
         progress=params.progress,
         progress_is_incremental=params.progress_is_incremental,
+        check=params.check,
+        diff=params.diff,
     )
 
     return PlaybookRunResponse(job_id=job_id)

@@ -160,6 +160,8 @@ def run_playbook_proc_task(
     progress: str | None,
     *,
     progress_is_incremental: bool,
+    check: bool = False,
+    diff: bool = False,
 ) -> None:
     """Celery task to run a playbook.
 
@@ -170,6 +172,8 @@ def run_playbook_proc_task(
     :param str callback: Callback URL for status updates.
     :param str progress: URL for sending progress updates.
     :param bool progress_is_incremental: Whether progress updates include all past progress.
+    :param bool check: Run Ansible in check mode (dry run).
+    :param bool diff: Show diffs for file and template changes.
     :return: None
     """
     msg = f"playbook_path: {playbook_path}, callback: {callback}"
@@ -177,7 +181,14 @@ def run_playbook_proc_task(
 
     _register_running_job(job_id)
 
+    cmd_line_args: list[str] = []
+    if check:
+        cmd_line_args.append("--check")
+    if diff:
+        cmd_line_args.append("--diff")
+
     runner = run(
+        cmdline=" ".join(cmd_line_args) if cmd_line_args else None,
         playbook=playbook_path,
         inventory=inventory,
         extravars=extra_vars,
