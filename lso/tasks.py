@@ -176,7 +176,7 @@ def run_playbook_proc_task(
     :param bool diff: Show diffs for file and template changes.
     :return: None
     """
-    msg = f"playbook_path: {playbook_path}, callback: {callback}"
+    msg = f"job_id: {job_id}, playbook_path: {playbook_path}, callback: {callback}, check: {check}, diff: {diff}"
     logger.info(msg)
 
     _register_running_job(job_id)

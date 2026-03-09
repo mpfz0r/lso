@@ -47,6 +47,10 @@ def run_playbook(
     :param dict[str, Any] | str inventory: The inventory that the playbook is executed against.
     :param HttpUrl callback: Callback URL where the playbook should send a status update when execution is completed.
                              This is used for workflow-orchestrator to continue with the next step in a workflow.
+    :param HttpUrl progress: URL where LSO sends progress updates as the playbook executes.
+    :param bool progress_is_incremental: Whether progress updates are sent incrementally or contain the whole history.
+    :param bool check: Run Ansible in check mode (``--check``), simulating changes without applying them.
+    :param bool diff: Show file diffs (``--diff``) for any template or file changes.
     :return UUID: Job ID of the launched playbook.
     """
     job_id = uuid4()
