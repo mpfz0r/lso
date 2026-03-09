@@ -60,16 +60,22 @@ class ExecutableRunParams(BaseModel):
     status_code=status.HTTP_201_CREATED,
     summary="Run an arbitrary executable",
     responses={
-        status.HTTP_403_FORBIDDEN: {"description": "Executable is not marked as executable"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Executable is not marked as executable"
+        },
         status.HTTP_404_NOT_FOUND: {"description": "Executable not found"},
     },
 )
 async def run_executable_endpoint(params: ExecutableRunParams) -> ExecutableRunResponse:
     """Dispatch a task to run an arbitrary executable."""
     if params.is_async:
-        job_id = run_executable_async(params.executable_name, params.args, params.callback)
+        job_id = run_executable_async(
+            params.executable_name, params.args, params.callback
+        )
         return ExecutableRunResponse(job_id=job_id)
 
     job_id = uuid4()
-    result = await asyncio.to_thread(run_executable_sync, str(params.executable_name), params.args)
+    result = await asyncio.to_thread(
+        run_executable_sync, str(params.executable_name), params.args
+    )
     return ExecutableRunResponse(job_id=job_id, result=result)

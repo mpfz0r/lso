@@ -27,6 +27,7 @@ from ansible.parsing.dataloader import DataLoader
 from fastapi import APIRouter, HTTPException, status
 from pydantic import AfterValidator, BaseModel, HttpUrl
 
+from lso.config import settings
 from lso.playbook import get_playbook_path, run_playbook
 
 router = APIRouter()
@@ -44,7 +45,9 @@ def _inventory_validator(inventory: dict[str, Any] | str) -> dict[str, Any] | st
     """
     if not ansible_runner.utils.isinventory(inventory):
         detail = "Invalid inventory provided. Should be a string, or JSON object."
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
+        )
 
     loader = DataLoader()
     output = StringIO()
@@ -52,13 +55,17 @@ def _inventory_validator(inventory: dict[str, Any] | str) -> dict[str, Any] | st
         json.dump(inventory, temp_inv, ensure_ascii=False)
         temp_inv.flush()
 
-        inventory_manager = InventoryManager(loader=loader, sources=[temp_inv.name], parse=True)
+        inventory_manager = InventoryManager(
+            loader=loader, sources=[temp_inv.name], parse=True
+        )
         inventory_manager.parse_source(temp_inv.name)
 
     output.seek(0)
     error_messages = output.readlines()
     if error_messages:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error_messages)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error_messages
+        )
 
     return inventory
 
@@ -72,8 +79,16 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
     return playbook_path
 
 
-PlaybookInventory = Annotated[dict[str, Any] | str, AfterValidator(_inventory_validator)]
+PlaybookInventory = Annotated[
+    dict[str, Any] | str, AfterValidator(_inventory_validator)
+]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
+
+
+class PlaybookList(BaseModel):
+    """Response model containing the list of available playbooks."""
+
+    playbooks: list[str]
 
 
 class PlaybookRunResponse(BaseModel):
@@ -104,6 +119,30 @@ class PlaybookRunParams(BaseModel):
     extra_vars: dict[str, Any] = {}
 
 
+@router.get(
+    "/",
+    response_model=PlaybookList,
+    summary="List available playbooks",
+)
+def list_playbooks() -> PlaybookList:
+    """Return the names of all Ansible playbooks available on this LSO instance.
+
+    Playbooks are discovered by scanning the directory configured in ``ANSIBLE_PLAYBOOKS_ROOT_DIR``
+    for files with a ``.yaml`` or ``.yml`` extension.
+
+    :return PlaybookList: A list of relative playbook filenames.
+    """
+    root = Path(settings.ANSIBLE_PLAYBOOKS_ROOT_DIR)
+    if not root.is_dir():
+        return PlaybookList(playbooks=[])
+    playbooks = sorted(
+        str(p.relative_to(root))
+        for p in root.rglob("*")
+        if p.is_file() and p.suffix in {".yaml", ".yml"}
+    )
+    return PlaybookList(playbooks=playbooks)
+
+
 @router.post(
     "/",
     response_model=PlaybookRunResponse,
@@ -111,7 +150,9 @@ class PlaybookRunParams(BaseModel):
     summary="Run an Ansible playbook",
     responses={
         status.HTTP_404_NOT_FOUND: {"description": "Playbook file not found"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Invalid inventory or request body"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Invalid inventory or request body"
+        },
     },
 )
 def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
