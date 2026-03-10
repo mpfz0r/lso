@@ -14,6 +14,7 @@
 """The API endpoint from which Ansible playbooks can be executed."""
 
 import json
+import logging
 import tempfile
 from contextlib import redirect_stderr
 from io import StringIO
@@ -32,6 +33,8 @@ from lso.playbook import get_playbook_path, run_playbook
 from lso.tasks import get_job_status
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _inventory_validator(inventory: dict[str, Any] | str) -> dict[str, Any] | str:
@@ -80,9 +83,9 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
     return playbook_path
 
 
-PlaybookInventory = Annotated[
-    dict[str, Any] | str, AfterValidator(_inventory_validator)
-]
+PlaybookInventory = Annotated[dict[str, Any] | str, AfterValidator(lambda v: v)]
+# Disabled for now. Warnings also trigger validation errors.
+# PlaybookInventory = Annotated[dict[str, Any] | str, AfterValidator(_inventory_validator)]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
 
 

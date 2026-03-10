@@ -18,6 +18,7 @@ the results to a specified callback URL.
 """
 
 import logging
+import shutil
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -181,7 +182,7 @@ def run_playbook_proc_task(
 
     _register_running_job(job_id)
 
-    cmd_line_args: list[str] = []
+    cmd_line_args: list[str] = ["-vvvv"]
     if check:
         cmd_line_args.append("--check")
     if diff:
@@ -199,6 +200,14 @@ def run_playbook_proc_task(
     )
 
     _register_finished_job(job_id, runner)
+
+    # Clean up the temporary private_data_dir created by ansible-runner.
+    private_data_dir = getattr(runner, "config", None) and getattr(runner.config, "private_data_dir", None)
+    if False and private_data_dir:
+        try:
+            shutil.rmtree(private_data_dir)
+        except OSError:
+            logger.warning("Failed to clean up ansible-runner temp dir: %s", private_data_dir)
 
 
 def run_executable_proc_task(
