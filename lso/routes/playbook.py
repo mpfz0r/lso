@@ -141,6 +141,8 @@ class PlaybookRunParams(BaseModel):
     check: bool = False
     #: When enabled, Ansible shows file diffs (``--diff``) for any template or file changes.
     diff: bool = False
+    #: Ansible verbosity level (0–4). Maps to ``-v`` through ``-vvvv``. Default ``0`` means no extra verbosity.
+    verbosity: int = 0
 
 
 @router.get(
@@ -196,6 +198,7 @@ def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
         progress_is_incremental=params.progress_is_incremental,
         check=params.check,
         diff=params.diff,
+        verbosity=params.verbosity,
     )
 
     return PlaybookRunResponse(job_id=job_id)

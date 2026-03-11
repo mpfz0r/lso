@@ -163,6 +163,7 @@ def run_playbook_proc_task(
     progress_is_incremental: bool,
     check: bool = False,
     diff: bool = False,
+    verbosity: int = 0,
 ) -> None:
     """Celery task to run a playbook.
 
@@ -175,6 +176,7 @@ def run_playbook_proc_task(
     :param bool progress_is_incremental: Whether progress updates include all past progress.
     :param bool check: Run Ansible in check mode (dry run).
     :param bool diff: Show diffs for file and template changes.
+    :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
     :return: None
     """
     msg = f"job_id: {job_id}, playbook_path: {playbook_path}, callback: {callback}, check: {check}, diff: {diff}"
@@ -182,7 +184,9 @@ def run_playbook_proc_task(
 
     _register_running_job(job_id)
 
-    cmd_line_args: list[str] = ["-vvvv"]
+    cmd_line_args: list[str] = []
+    if verbosity:
+        cmd_line_args.append(f"-{'v' * min(verbosity, 4)}")
     if check:
         cmd_line_args.append("--check")
     if diff:

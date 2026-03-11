@@ -39,6 +39,7 @@ def run_playbook(
     progress_is_incremental: bool,
     check: bool = False,
     diff: bool = False,
+    verbosity: int = 0,
 ) -> UUID:
     """Run an Ansible playbook against a specified inventory.
 
@@ -51,6 +52,7 @@ def run_playbook(
     :param bool progress_is_incremental: Whether progress updates are sent incrementally or contain the whole history.
     :param bool check: Run Ansible in check mode (``--check``), simulating changes without applying them.
     :param bool diff: Show file diffs (``--diff``) for any template or file changes.
+    :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
     :return UUID: Job ID of the launched playbook.
     """
     job_id = uuid4()
@@ -74,6 +76,7 @@ def run_playbook(
             progress_is_incremental=progress_is_incremental,
             check=check,
             diff=diff,
+            verbosity=verbosity,
         )
         if settings.TESTING:
             executor_handle.result()
