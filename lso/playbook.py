@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 from pydantic import HttpUrl
 
 from lso.config import ExecutorType, settings
+from lso.schema import InventoryFile
 from lso.tasks import run_playbook_proc_task
 from lso.utils import get_thread_pool
 
@@ -32,7 +33,7 @@ def get_playbook_path(playbook_name: Path) -> Path:
 def run_playbook(
     playbook_path: Path,
     extra_vars: dict[str, Any],
-    inventory: dict[str, str],
+    inventory: list[InventoryFile],
     callback: HttpUrl | None,
     progress: HttpUrl | None,
     *,
@@ -45,8 +46,8 @@ def run_playbook(
 
     :param Path playbook_path: Playbook to be executed.
     :param dict[str, Any] extra_vars: Any extra vars needed for the playbook to run.
-    :param dict[str, str] inventory: Flat map of relative file paths to YAML content strings, written into the
-                                     ansible-runner ``private_data_dir/inventory/`` directory.
+    :param list[InventoryFile] inventory: List of inventory file entries written into the ansible-runner
+                                          ``private_data_dir/inventory/`` directory.
     :param HttpUrl callback: Callback URL where the playbook should send a status update when execution is completed.
                              This is used for workflow-orchestrator to continue with the next step in a workflow.
     :param HttpUrl progress: URL where LSO sends progress updates as the playbook executes.

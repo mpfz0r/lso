@@ -31,7 +31,7 @@ from ansible_runner import Runner, run
 from starlette import status
 
 from lso.config import settings
-from lso.schema import ExecutableRunResponse
+from lso.schema import ExecutableRunResponse, InventoryFile
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ def run_playbook_proc_task(
     job_id: str,
     playbook_path: str,
     extra_vars: dict[str, Any],
-    inventory: dict[str, str],
+    inventory: list[InventoryFile],
     callback: str | None,
     progress: str | None,
     *,
@@ -172,8 +172,8 @@ def run_playbook_proc_task(
     :param str job_id: Identifier of the job being executed.
     :param str playbook_path: Path to the playbook to be executed.
     :param dict[str, Any] extra_vars: Extra variables to pass to the playbook.
-    :param dict[str, str] inventory: Flat map of relative file paths to YAML content strings, written into the
-                                     ansible-runner ``private_data_dir/inventory/`` directory.
+    :param list[InventoryFile] inventory: List of inventory file entries written into the ansible-runner
+                                          ``private_data_dir/inventory/`` directory.
     :param str callback: Callback URL for status updates.
     :param str progress: URL for sending progress updates.
     :param bool progress_is_incremental: Whether progress updates include all past progress.
@@ -198,10 +198,10 @@ def run_playbook_proc_task(
     private_data_dir = tempfile.mkdtemp(prefix="lso-ansible-")
     try:
         inventory_dir = Path(private_data_dir) / "inventory"
-        for relative_path, content in inventory.items():
-            file_path = inventory_dir / relative_path
+        for entry in inventory:
+            file_path = inventory_dir / entry["path"]
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(content)
+            file_path.write_text(entry["content"])
 
         runner = run(
             cmdline=" ".join(cmd_line_args) if cmd_line_args else None,

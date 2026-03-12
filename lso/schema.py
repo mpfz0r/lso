@@ -11,12 +11,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Module for defining the schema for running arbitrary executables."""
+"""Module for defining shared schema types."""
 
 from enum import StrEnum
+from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
+
+
+class InventoryFile(TypedDict):
+    """A single inventory file entry with a relative path and YAML content."""
+
+    path: str
+    content: str
 
 
 class JobStatus(StrEnum):

@@ -23,6 +23,7 @@ from pydantic import AfterValidator, BaseModel, HttpUrl
 
 from lso.config import settings
 from lso.playbook import get_playbook_path, run_playbook
+from lso.schema import InventoryFile
 from lso.tasks import get_job_status
 
 router = APIRouter()
@@ -30,14 +31,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _validate_inventory_paths(inventory: dict[str, str]) -> dict[str, str]:
+def _validate_inventory_paths(inventory: list[InventoryFile]) -> list[InventoryFile]:
     """Validate that all inventory file paths are safe relative paths.
 
-    :param inventory: Flat map of relative file paths to YAML content strings.
+    :param inventory: List of inventory file entries with ``path`` and ``content`` fields.
     :return: The validated inventory if all paths are safe.
     :raises HTTPException: If any path is unsafe.
     """
-    for key in inventory:
+    for entry in inventory:
+        key = entry["path"]
         if not key or not key.strip():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -71,7 +73,7 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
     return playbook_path
 
 
-PlaybookInventory = Annotated[dict[str, str], AfterValidator(_validate_inventory_paths)]
+PlaybookInventory = Annotated[list[InventoryFile], AfterValidator(_validate_inventory_paths)]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
 
 
@@ -115,9 +117,9 @@ class PlaybookRunParams(BaseModel):
     progress: HttpUrl | None = None
     #: Optionally, whether progress updates should be incremental or not.
     progress_is_incremental: bool = True
-    #: The inventory to run the playbook against, as a flat map of relative file paths to YAML content strings.
-    #: Keys are relative paths within the inventory directory (e.g. ``"hosts.yml"``, ``"group_vars/routers.yml"``).
-    #: Values are the YAML file contents as strings.
+    #: The inventory to run the playbook against, as a list of file entries. Each entry has a ``path`` (relative path
+    #: within the inventory directory, e.g. ``"hosts.yml"``, ``"group_vars/routers.yml"``) and ``content`` (the YAML
+    #: file contents as a string).
     inventory: PlaybookInventory
     #: Extra variables that should get passed to the playbook. This includes any required configuration objects
     #: from the workflow orchestrator, commit comments, whether this execution should be a dry run, a trouble ticket

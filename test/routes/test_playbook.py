@@ -26,7 +26,9 @@ from lso.tasks import _job_store, _job_store_lock
 TEST_CALLBACK_URL = "https://fqdn.abc.xyz/api/resume"
 TEST_PROGRESS_URL = "https://fqdn.abc.xyz/api/progress"
 
-SAMPLE_INVENTORY = {"hosts.yml": "all:\n  hosts:\n    host1_local:\n      foo: bar\n    host2_local:\n      hello: world\n"}
+SAMPLE_INVENTORY = [
+    {"path": "hosts.yml", "content": "all:\n  hosts:\n    host1_local:\n      foo: bar\n    host2_local:\n      hello: world\n"},
+]
 
 
 def test_list_playbooks(client: TestClient) -> None:
@@ -83,7 +85,7 @@ def test_playbook_endpoint_check_and_diff(
     params = {
         "playbook_name": "placeholder.yaml",
         "callback": TEST_CALLBACK_URL,
-        "inventory": {"hosts.yml": "all:\n  hosts:\n    host1_local:\n      foo: bar\n"},
+        "inventory": [{"path": "hosts.yml", "content": "all:\n  hosts:\n    host1_local:\n      foo: bar\n"}],
         "extra_vars": {},
         "check": check,
         "diff": diff,
@@ -108,10 +110,10 @@ def test_playbook_endpoint_multi_file_inventory(
     params = {
         "playbook_name": "placeholder.yaml",
         "callback": TEST_CALLBACK_URL,
-        "inventory": {
-            "hosts.yml": "all:\n  hosts:\n    host1.local:\n    host2.local:\n    host3.local:\n",
-            "group_vars/all.yml": "some_var: some_value\n",
-        },
+        "inventory": [
+            {"path": "hosts.yml", "content": "all:\n  hosts:\n    host1.local:\n    host2.local:\n    host3.local:\n"},
+            {"path": "group_vars/all.yml", "content": "some_var: some_value\n"},
+        ],
     }
 
     with patch("lso.tasks.run", new=mocked_ansible_runner_run):
@@ -127,7 +129,7 @@ def test_playbook_endpoint_path_traversal_rejected(client: TestClient) -> None:
     """Inventory paths containing '..' must be rejected."""
     params = {
         "playbook_name": "placeholder.yaml",
-        "inventory": {"../../../etc/passwd": "malicious content"},
+        "inventory": [{"path": "../../../etc/passwd", "content": "malicious content"}],
     }
 
     rv = client.post("/api/playbook/", json=params)
@@ -138,18 +140,18 @@ def test_playbook_endpoint_absolute_path_rejected(client: TestClient) -> None:
     """Inventory paths must be relative, not absolute."""
     params = {
         "playbook_name": "placeholder.yaml",
-        "inventory": {"/etc/hosts": "content"},
+        "inventory": [{"path": "/etc/hosts", "content": "content"}],
     }
 
     rv = client.post("/api/playbook/", json=params)
     assert rv.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_playbook_endpoint_inventory_value_must_be_string(client: TestClient) -> None:
-    """Inventory values must be strings (YAML content), not dicts or other types."""
+def test_playbook_endpoint_inventory_missing_fields(client: TestClient) -> None:
+    """Inventory entries must have both 'path' and 'content' fields."""
     params = {
         "playbook_name": "placeholder.yaml",
-        "inventory": {"hosts.yml": {"nested": "dict"}},
+        "inventory": [{"path": "hosts.yml"}],
     }
 
     rv = client.post("/api/playbook/", json=params)
@@ -167,7 +169,7 @@ def test_run_playbook_threadpool_execution(
         params = {
             "playbook_name": "placeholder.yaml",
             "extra_vars": {"dry_run": True},
-            "inventory": {"hosts.yml": "all:\n  hosts:\n    host1.local:\n      foo: bar\n"},
+            "inventory": [{"path": "hosts.yml", "content": "all:\n  hosts:\n    host1.local:\n      foo: bar\n"}],
             "callback": TEST_CALLBACK_URL,
         }
 
