@@ -13,18 +13,11 @@
 
 """The API endpoint from which Ansible playbooks can be executed."""
 
-import json
 import logging
-import tempfile
-from contextlib import redirect_stderr
-from io import StringIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Any
 from uuid import UUID
 
-import ansible_runner
-from ansible.inventory.manager import InventoryManager
-from ansible.parsing.dataloader import DataLoader
 from fastapi import APIRouter, HTTPException, status
 from pydantic import AfterValidator, BaseModel, HttpUrl
 
@@ -37,40 +30,35 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _inventory_validator(inventory: dict[str, Any] | str) -> dict[str, Any] | str:
-    """Validate the provided inventory format.
+def _validate_inventory_paths(inventory: dict[str, str]) -> dict[str, str]:
+    """Validate that all inventory file paths are safe relative paths.
 
-    Attempts to parse the inventory to verify its validity. If the inventory cannot be parsed or the inventory
-    format is incorrect, an HTTP 422 error is raised.
-
-    :param inventory: The inventory to validate, can be a dictionary or a string.
-    :return: The validated inventory if no errors are found.
-    :raises HTTPException: If parsing fails or the format is incorrect.
+    :param inventory: Flat map of relative file paths to YAML content strings.
+    :return: The validated inventory if all paths are safe.
+    :raises HTTPException: If any path is unsafe.
     """
-    if not ansible_runner.utils.isinventory(inventory):
-        detail = "Invalid inventory provided. Should be a string, or JSON object."
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
-        )
-
-    loader = DataLoader()
-    output = StringIO()
-    with tempfile.NamedTemporaryFile(mode="w+") as temp_inv, redirect_stderr(output):
-        json.dump(inventory, temp_inv, ensure_ascii=False)
-        temp_inv.flush()
-
-        inventory_manager = InventoryManager(
-            loader=loader, sources=[temp_inv.name], parse=True
-        )
-        inventory_manager.parse_source(temp_inv.name)
-
-    output.seek(0)
-    error_messages = output.readlines()
-    if error_messages:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error_messages
-        )
-
+    for key in inventory:
+        if not key or not key.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Inventory contains an empty file path.",
+            )
+        if "\x00" in key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Inventory path contains null byte: {key!r}",
+            )
+        parts = PurePosixPath(key).parts
+        if parts[0] == "/":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Inventory path must be relative, got: {key!r}",
+            )
+        if ".." in parts:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Inventory path must not contain '..': {key!r}",
+            )
     return inventory
 
 
@@ -83,9 +71,7 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
     return playbook_path
 
 
-PlaybookInventory = Annotated[dict[str, Any] | str, AfterValidator(lambda v: v)]
-# Disabled for now. Warnings also trigger validation errors.
-# PlaybookInventory = Annotated[dict[str, Any] | str, AfterValidator(_inventory_validator)]
+PlaybookInventory = Annotated[dict[str, str], AfterValidator(_validate_inventory_paths)]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
 
 
@@ -129,9 +115,9 @@ class PlaybookRunParams(BaseModel):
     progress: HttpUrl | None = None
     #: Optionally, whether progress updates should be incremental or not.
     progress_is_incremental: bool = True
-    #: The inventory to run the playbook against. This inventory can also include any host vars, if needed. When
-    #: including host vars, it should be a dictionary. Can be a simple string containing hostnames when no host vars are
-    #: needed. In the latter case, multiple hosts should be separated with a ``\n`` newline character only.
+    #: The inventory to run the playbook against, as a flat map of relative file paths to YAML content strings.
+    #: Keys are relative paths within the inventory directory (e.g. ``"hosts.yml"``, ``"group_vars/routers.yml"``).
+    #: Values are the YAML file contents as strings.
     inventory: PlaybookInventory
     #: Extra variables that should get passed to the playbook. This includes any required configuration objects
     #: from the workflow orchestrator, commit comments, whether this execution should be a dry run, a trouble ticket

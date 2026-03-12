@@ -19,8 +19,10 @@ the results to a specified callback URL.
 
 import logging
 import shutil
+import tempfile
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -156,7 +158,7 @@ def run_playbook_proc_task(
     job_id: str,
     playbook_path: str,
     extra_vars: dict[str, Any],
-    inventory: dict[str, Any] | str,
+    inventory: dict[str, str],
     callback: str | None,
     progress: str | None,
     *,
@@ -170,7 +172,8 @@ def run_playbook_proc_task(
     :param str job_id: Identifier of the job being executed.
     :param str playbook_path: Path to the playbook to be executed.
     :param dict[str, Any] extra_vars: Extra variables to pass to the playbook.
-    :param dict[str, Any] | str inventory: Inventory to run the playbook against.
+    :param dict[str, str] inventory: Flat map of relative file paths to YAML content strings, written into the
+                                     ansible-runner ``private_data_dir/inventory/`` directory.
     :param str callback: Callback URL for status updates.
     :param str progress: URL for sending progress updates.
     :param bool progress_is_incremental: Whether progress updates include all past progress.
@@ -192,26 +195,28 @@ def run_playbook_proc_task(
     if diff:
         cmd_line_args.append("--diff")
 
-    runner = run(
-        cmdline=" ".join(cmd_line_args) if cmd_line_args else None,
-        playbook=playbook_path,
-        inventory=inventory,
-        extravars=extra_vars,
-        event_handler=playbook_event_handler_factory(
-            progress, progress_is_incremental=progress_is_incremental
-        ),
-        finished_callback=playbook_finished_handler_factory(callback, job_id),
-    )
+    private_data_dir = tempfile.mkdtemp(prefix="lso-ansible-")
+    try:
+        inventory_dir = Path(private_data_dir) / "inventory"
+        for relative_path, content in inventory.items():
+            file_path = inventory_dir / relative_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content)
 
-    _register_finished_job(job_id, runner)
+        runner = run(
+            cmdline=" ".join(cmd_line_args) if cmd_line_args else None,
+            playbook=playbook_path,
+            private_data_dir=private_data_dir,
+            extravars=extra_vars,
+            event_handler=playbook_event_handler_factory(
+                progress, progress_is_incremental=progress_is_incremental
+            ),
+            finished_callback=playbook_finished_handler_factory(callback, job_id),
+        )
 
-    # Clean up the temporary private_data_dir created by ansible-runner.
-    private_data_dir = getattr(runner, "config", None) and getattr(runner.config, "private_data_dir", None)
-    if False and private_data_dir:
-        try:
-            shutil.rmtree(private_data_dir)
-        except OSError:
-            logger.warning("Failed to clean up ansible-runner temp dir: %s", private_data_dir)
+        _register_finished_job(job_id, runner)
+    finally:
+        shutil.rmtree(private_data_dir, ignore_errors=True)
 
 
 def run_executable_proc_task(

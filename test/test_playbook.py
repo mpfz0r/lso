@@ -27,7 +27,7 @@ def test_playbook_execution() -> None:
     run_playbook(
         playbook_path=Path(__file__).parent / "test-playbook.yaml",
         extra_vars={},
-        inventory="127.0.0.1",
+        inventory={"hosts.yml": "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n"},
         callback=TEST_CALLBACK_URL,
         progress=TEST_PROGRESS_URL,
         progress_is_incremental=True,
@@ -43,7 +43,7 @@ def test_playbook_execution_with_check_and_diff() -> None:
     run_playbook(
         playbook_path=Path(__file__).parent / "test-playbook.yaml",
         extra_vars={},
-        inventory="127.0.0.1",
+        inventory={"hosts.yml": "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n"},
         callback=TEST_CALLBACK_URL,
         progress=TEST_PROGRESS_URL,
         progress_is_incremental=True,

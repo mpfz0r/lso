@@ -49,6 +49,7 @@ def mocked_ansible_runner_run() -> Callable:
             self.status = "success"
             self.rc = 0
             self.stdout = StringIO("[{'step one': 'results'}, {'step two': 2}]")
+            self.stats = {}
 
     def run(*args: Any, **kwargs: Any) -> Runner:  # noqa: ARG001
         return Runner()
