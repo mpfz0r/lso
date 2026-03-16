@@ -73,7 +73,9 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
     return playbook_path
 
 
-PlaybookInventory = Annotated[list[InventoryFile], AfterValidator(_validate_inventory_paths)]
+PlaybookInventory = Annotated[
+    list[InventoryFile], AfterValidator(_validate_inventory_paths)
+]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
 
 
@@ -131,6 +133,9 @@ class PlaybookRunParams(BaseModel):
     diff: bool = False
     #: Ansible verbosity level (0–4). Maps to ``-v`` through ``-vvvv``. Default ``0`` means no extra verbosity.
     verbosity: int = 0
+    #: Limit execution to a subset of hosts. Accepts the same patterns as Ansible's ``--limit`` flag:
+    #: host names, group names, comma-separated lists, or wildcard patterns.
+    limit: str | None = None
 
 
 @router.get(
@@ -187,6 +192,7 @@ def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
         check=params.check,
         diff=params.diff,
         verbosity=params.verbosity,
+        limit=params.limit,
     )
 
     return PlaybookRunResponse(job_id=job_id)

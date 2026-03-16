@@ -166,6 +166,7 @@ def run_playbook_proc_task(
     check: bool = False,
     diff: bool = False,
     verbosity: int = 0,
+    limit: str | None = None,
 ) -> None:
     """Celery task to run a playbook.
 
@@ -180,6 +181,7 @@ def run_playbook_proc_task(
     :param bool check: Run Ansible in check mode (dry run).
     :param bool diff: Show diffs for file and template changes.
     :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
+    :param str | None limit: Limit execution to a subset of hosts (``--limit``).
     :return: None
     """
     msg = f"job_id: {job_id}, playbook_path: {playbook_path}, callback: {callback}, check: {check}, diff: {diff}"
@@ -207,6 +209,7 @@ def run_playbook_proc_task(
             cmdline=" ".join(cmd_line_args) if cmd_line_args else None,
             playbook=playbook_path,
             private_data_dir=private_data_dir,
+            limit=limit,
             extravars=extra_vars,
             event_handler=playbook_event_handler_factory(
                 progress, progress_is_incremental=progress_is_incremental

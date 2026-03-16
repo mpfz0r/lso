@@ -41,6 +41,7 @@ def run_playbook(
     check: bool = False,
     diff: bool = False,
     verbosity: int = 0,
+    limit: str | None = None,
 ) -> UUID:
     """Run an Ansible playbook against a specified inventory.
 
@@ -55,6 +56,7 @@ def run_playbook(
     :param bool check: Run Ansible in check mode (``--check``), simulating changes without applying them.
     :param bool diff: Show file diffs (``--diff``) for any template or file changes.
     :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
+    :param str | None limit: Limit execution to a subset of hosts (``--limit``).
     :return UUID: Job ID of the launched playbook.
     """
     job_id = uuid4()
@@ -79,6 +81,7 @@ def run_playbook(
             check=check,
             diff=diff,
             verbosity=verbosity,
+            limit=limit,
         )
         if settings.TESTING:
             executor_handle.result()
