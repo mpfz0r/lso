@@ -51,10 +51,36 @@ def _register_running_job(job_id: str) -> None:
         }
 
 
+def _append_stdout(job_id: str, lines: list[str]) -> None:
+    """Append new stdout lines to a running job's store entry.
+
+    Called from the ansible-runner event handler so that poll clients
+    see incremental output while the playbook is still running.
+    """
+    with _job_store_lock:
+        entry = _job_store.get(job_id)
+        if entry is not None:
+            entry["stdout"].extend(lines)
+
+
 def _register_finished_job(job_id: str, runner: Runner) -> None:
-    """Persist relevant ``Runner`` attributes once the playbook completes."""
-    stdout_lines = runner.stdout.read().split("\n") if runner.stdout else []
-    stdout_lines = [line for line in stdout_lines if line.strip()]
+    """Persist relevant ``Runner`` attributes once the playbook completes.
+
+    Uses the stdout lines already accumulated via ``_append_stdout``
+    during execution, falling back to ``runner.stdout`` only when no
+    incremental lines were captured.
+    """
+    with _job_store_lock:
+        existing = _job_store.get(job_id)
+        incremental_lines = existing["stdout"] if existing else []
+
+    # Fall back to reading runner.stdout when no lines were captured
+    # incrementally (e.g. when every event had empty stdout).
+    if not incremental_lines:
+        stdout_lines = runner.stdout.read().split("\n") if runner.stdout else []
+        stdout_lines = [line for line in stdout_lines if line.strip()]
+    else:
+        stdout_lines = incremental_lines
 
     with _job_store_lock:
         _job_store[job_id] = {
@@ -69,9 +95,20 @@ def _register_finished_job(job_id: str, runner: Runner) -> None:
 
 
 def get_job_status(job_id: str) -> dict[str, Any] | None:
-    """Return the stored state for *job_id*, or ``None`` if unknown."""
+    """Return the stored state for *job_id*, or ``None`` if unknown.
+
+    Returns a shallow copy so callers get a consistent snapshot while
+    the job store may still be mutated by the runner thread.
+    """
     with _job_store_lock:
-        return _job_store.get(job_id)
+        entry = _job_store.get(job_id)
+        if entry is None:
+            return None
+        # Shallow copy the dict and snapshot the stdout list so the
+        # caller sees a stable view even if new lines are appended.
+        snapshot = dict(entry)
+        snapshot["stdout"] = list(entry["stdout"])
+        return snapshot
 
 
 class CallbackFailedError(Exception):
@@ -79,40 +116,57 @@ class CallbackFailedError(Exception):
 
 
 def playbook_event_handler_factory(
-    progress: str | None, *, progress_is_incremental: bool
-) -> Callable[[dict], bool] | None:
+    job_id: str,
+    progress: str | None,
+    *,
+    progress_is_incremental: bool,
+) -> Callable[[dict], bool]:
     """Create an event handler for Ansible playbook runs.
 
-    This is used to send incremental progress updates to the external system that called for this playbook to be run.
+    Every event with non-empty stdout is appended to the in-memory job
+    store so that ``get_job_status`` returns incremental output while
+    the playbook is still running.
 
+    When a *progress* URL is configured the handler also POSTs updates
+    to the external system.
+
+    :param str job_id: The job identifier used to look up the store entry.
     :param str progress: The progress URL where the external system expects to receive updates.
     :param bool progress_is_incremental: Whether progress updates are sent incrementally, or contain the whole history
                                          of event data.
     """
-    events_stdout = []
+    events_stdout: list[str] = []
 
     def _playbook_event_handler(event: dict) -> bool:
-        event_data = event["stdout"].strip()
+        event_data = event.get("stdout", "").strip()
         if not event_data:
             return False
 
         event_data_lines = event_data.split("\r\n")
-        if progress_is_incremental:
-            emit_body = event_data_lines
-        else:
-            events_stdout.extend(event_data_lines)
-            emit_body = events_stdout
+        new_lines = [line for line in event_data_lines if line.strip()]
 
-        requests.post(
-            str(progress),
-            json={"progress": emit_body},
-            timeout=settings.REQUEST_TIMEOUT_SEC,
-        )
+        # Feed the in-memory job store so poll clients see output
+        # while the playbook is still running.
+        if new_lines:
+            _append_stdout(job_id, new_lines)
+
+        # Optionally forward to an external progress URL.
+        if progress:
+            if progress_is_incremental:
+                emit_body = event_data_lines
+            else:
+                events_stdout.extend(event_data_lines)
+                emit_body = events_stdout
+
+            requests.post(
+                str(progress),
+                json={"progress": emit_body},
+                timeout=settings.REQUEST_TIMEOUT_SEC,
+            )
+
         return True
 
-    if progress:
-        return _playbook_event_handler
-    return None
+    return _playbook_event_handler
 
 
 def playbook_finished_handler_factory(
@@ -212,7 +266,7 @@ def run_playbook_proc_task(
             limit=limit,
             extravars=extra_vars,
             event_handler=playbook_event_handler_factory(
-                progress, progress_is_incremental=progress_is_incremental
+                job_id, progress, progress_is_incremental=progress_is_incremental
             ),
             finished_callback=playbook_finished_handler_factory(callback, job_id),
         )
