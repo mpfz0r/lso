@@ -42,6 +42,7 @@ def run_playbook(
     diff: bool = False,
     verbosity: int = 0,
     limit: str | None = None,
+    assets: list[InventoryFile] | None = None,
 ) -> UUID:
     """Run an Ansible playbook against a specified inventory.
 
@@ -57,6 +58,7 @@ def run_playbook(
     :param bool diff: Show file diffs (``--diff``) for any template or file changes.
     :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
     :param str | None limit: Limit execution to a subset of hosts (``--limit``).
+    :param list[InventoryFile] | None assets: Optional non-inventory files written to ``private_data_dir/assets/``.
     :return UUID: Job ID of the launched playbook.
     """
     job_id = uuid4()
@@ -82,6 +84,7 @@ def run_playbook(
             diff=diff,
             verbosity=verbosity,
             limit=limit,
+            assets=assets,
         )
         if settings.TESTING:
             executor_handle.result()

@@ -221,6 +221,7 @@ def run_playbook_proc_task(
     diff: bool = False,
     verbosity: int = 0,
     limit: str | None = None,
+    assets: list[InventoryFile] | None = None,
 ) -> None:
     """Celery task to run a playbook.
 
@@ -236,6 +237,7 @@ def run_playbook_proc_task(
     :param bool diff: Show diffs for file and template changes.
     :param int verbosity: Ansible verbosity level (0–4), maps to ``-v`` through ``-vvvv``.
     :param str | None limit: Limit execution to a subset of hosts (``--limit``).
+    :param list[InventoryFile] | None assets: Optional non-inventory files written to ``private_data_dir/assets/``.
     :return: None
     """
     msg = f"job_id: {job_id}, playbook_path: {playbook_path}, callback: {callback}, check: {check}, diff: {diff}"
@@ -258,6 +260,13 @@ def run_playbook_proc_task(
             file_path = inventory_dir / entry["path"]
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(entry["content"])
+
+        if assets:
+            assets_dir = Path(private_data_dir) / "assets"
+            for entry in assets:
+                file_path = assets_dir / entry["path"]
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(entry["content"])
 
         runner = run(
             cmdline=" ".join(cmd_line_args) if cmd_line_args else None,

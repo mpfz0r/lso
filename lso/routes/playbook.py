@@ -31,37 +31,46 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _validate_inventory_paths(inventory: list[InventoryFile]) -> list[InventoryFile]:
-    """Validate that all inventory file paths are safe relative paths.
+def _validate_file_paths(files: list[InventoryFile], label: str) -> list[InventoryFile]:
+    """Validate that all file paths in *files* are safe relative paths.
 
-    :param inventory: List of inventory file entries with ``path`` and ``content`` fields.
-    :return: The validated inventory if all paths are safe.
+    :param files: List of file entries with ``path`` and ``content`` fields.
+    :param label: Human-readable label used in error messages (e.g. ``"Inventory"``, ``"Asset"``).
+    :return: The validated list if all paths are safe.
     :raises HTTPException: If any path is unsafe.
     """
-    for entry in inventory:
+    for entry in files:
         key = entry["path"]
         if not key or not key.strip():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Inventory contains an empty file path.",
+                detail=f"{label} contains an empty file path.",
             )
         if "\x00" in key:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Inventory path contains null byte: {key!r}",
+                detail=f"{label} path contains null byte: {key!r}",
             )
         parts = PurePosixPath(key).parts
         if parts[0] == "/":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Inventory path must be relative, got: {key!r}",
+                detail=f"{label} path must be relative, got: {key!r}",
             )
         if ".." in parts:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Inventory path must not contain '..': {key!r}",
+                detail=f"{label} path must not contain '..': {key!r}",
             )
-    return inventory
+    return files
+
+
+def _validate_inventory_paths(inventory: list[InventoryFile]) -> list[InventoryFile]:
+    return _validate_file_paths(inventory, "Inventory")
+
+
+def _validate_asset_paths(assets: list[InventoryFile]) -> list[InventoryFile]:
+    return _validate_file_paths(assets, "Asset")
 
 
 def _playbook_path_validator(playbook_name: Path) -> Path:
@@ -76,6 +85,7 @@ def _playbook_path_validator(playbook_name: Path) -> Path:
 PlaybookInventory = Annotated[
     list[InventoryFile], AfterValidator(_validate_inventory_paths)
 ]
+PlaybookAssets = Annotated[list[InventoryFile], AfterValidator(_validate_asset_paths)]
 PlaybookName = Annotated[Path, AfterValidator(_playbook_path_validator)]
 
 
@@ -136,6 +146,10 @@ class PlaybookRunParams(BaseModel):
     #: Limit execution to a subset of hosts. Accepts the same patterns as Ansible's ``--limit`` flag:
     #: host names, group names, comma-separated lists, or wildcard patterns.
     limit: str | None = None
+    #: Optional list of non-inventory files needed by the playbook. Each entry has a ``path`` (relative path within
+    #: the assets directory) and ``content`` (file contents as a string). Files are written to
+    #: ``private_data_dir/assets/`` before execution.
+    assets: PlaybookAssets = []
 
 
 @router.get(
@@ -193,6 +207,7 @@ def run_playbook_endpoint(params: PlaybookRunParams) -> PlaybookRunResponse:
         diff=params.diff,
         verbosity=params.verbosity,
         limit=params.limit,
+        assets=params.assets,
     )
 
     return PlaybookRunResponse(job_id=job_id)
