@@ -39,6 +39,31 @@ logger = logging.getLogger(__name__)
 _job_store: dict[str, dict[str, Any]] = {}
 _job_store_lock = threading.Lock()
 
+#: ansible-runner events that describe one host's result for one task.
+_RESULT_EVENTS = {"runner_on_ok", "runner_on_failed", "runner_on_unreachable"}
+
+
+def _result_record(event: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a compact record for a changed, failed or unreachable host result, else ``None``."""
+    name = event.get("event")
+    if name not in _RESULT_EVENTS:
+        return None
+    data = event.get("event_data") or {}
+    res = data.get("res") or {}
+    unreachable = name == "runner_on_unreachable"
+    failed = name == "runner_on_failed" and not data.get("ignore_errors")
+    changed = bool(res.get("changed"))
+    if not (changed or failed or unreachable):
+        return None
+    return {
+        "host": data.get("host"),
+        "task": data.get("task"),
+        "changed": changed,
+        "failed": failed,
+        "unreachable": unreachable,
+        "diff": res.get("diff"),
+    }
+
 
 def _register_running_job(job_id: str) -> None:
     """Mark a job as running before the playbook starts."""
@@ -48,6 +73,7 @@ def _register_running_job(job_id: str) -> None:
             "rc": None,
             "stdout": [],
             "stats": {},
+            "results": [],
         }
 
 
@@ -63,6 +89,14 @@ def _append_stdout(job_id: str, lines: list[str]) -> None:
             entry["stdout"].extend(lines)
 
 
+def _append_result(job_id: str, record: dict[str, Any]) -> None:
+    """Append a result record to a running job's store entry."""
+    with _job_store_lock:
+        entry = _job_store.get(job_id)
+        if entry is not None:
+            entry["results"].append(record)
+
+
 def _register_finished_job(job_id: str, runner: Runner) -> None:
     """Persist relevant ``Runner`` attributes once the playbook completes.
 
@@ -73,6 +107,7 @@ def _register_finished_job(job_id: str, runner: Runner) -> None:
     with _job_store_lock:
         existing = _job_store.get(job_id)
         incremental_lines = existing["stdout"] if existing else []
+        results = existing.get("results", []) if existing else []
 
     # Fall back to reading runner.stdout when no lines were captured
     # incrementally (e.g. when every event had empty stdout).
@@ -88,6 +123,7 @@ def _register_finished_job(job_id: str, runner: Runner) -> None:
             "rc": int(runner.rc) if runner.rc is not None else None,
             "stdout": stdout_lines,
             "stats": runner.stats if runner.stats else {},
+            "results": results,
             "canceled": getattr(runner, "canceled", False),
             "errored": getattr(runner, "errored", False),
             "timed_out": getattr(runner, "timed_out", False),
@@ -108,6 +144,7 @@ def get_job_status(job_id: str) -> dict[str, Any] | None:
         # caller sees a stable view even if new lines are appended.
         snapshot = dict(entry)
         snapshot["stdout"] = list(entry["stdout"])
+        snapshot["results"] = list(entry.get("results", []))
         return snapshot
 
 
@@ -138,6 +175,10 @@ def playbook_event_handler_factory(
     events_stdout: list[str] = []
 
     def _playbook_event_handler(event: dict) -> bool:
+        record = _result_record(event)
+        if record is not None:
+            _append_result(job_id, record)
+
         event_data = event.get("stdout", "").strip()
         if not event_data:
             return False

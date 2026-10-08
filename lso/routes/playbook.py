@@ -112,6 +112,8 @@ class PlaybookJobStatus(BaseModel):
     rc: int | None = None
     stdout: list[str] = []
     stats: dict[str, Any] = {}
+    #: Changed, failed and unreachable host results: host, task, changed, failed, unreachable, diff.
+    results: list[dict[str, Any]] = []
     canceled: bool = False
     errored: bool = False
     timed_out: bool = False
