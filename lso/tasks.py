@@ -43,8 +43,17 @@ _job_store_lock = threading.Lock()
 _RESULT_EVENTS = {"runner_on_ok", "runner_on_failed", "runner_on_unreachable"}
 
 
+#: A task sets this fact to hand structured data about a host to the caller.
+_REPORT_FACT = "nwap_report"
+
+
 def _result_record(event: dict[str, Any]) -> dict[str, Any] | None:
-    """Return a compact record for a changed, failed or unreachable host result, else ``None``."""
+    """Return a compact record for a host result worth keeping, else ``None``.
+
+    Kept are changed, failed and unreachable results, and any result whose task set the
+    ``nwap_report`` fact to a mapping: that mapping is passed through as ``report``, also
+    when the task changed nothing.
+    """
     name = event.get("event")
     if name not in _RESULT_EVENTS:
         return None
@@ -53,9 +62,13 @@ def _result_record(event: dict[str, Any]) -> dict[str, Any] | None:
     unreachable = name == "runner_on_unreachable"
     failed = name == "runner_on_failed" and not data.get("ignore_errors")
     changed = bool(res.get("changed"))
-    if not (changed or failed or unreachable):
+    facts = res.get("ansible_facts")
+    report = facts.get(_REPORT_FACT) if isinstance(facts, dict) else None
+    if not isinstance(report, dict):
+        report = None
+    if not (changed or failed or unreachable or report is not None):
         return None
-    return {
+    record = {
         "host": data.get("host"),
         "task": data.get("task"),
         "changed": changed,
@@ -63,6 +76,9 @@ def _result_record(event: dict[str, Any]) -> dict[str, Any] | None:
         "unreachable": unreachable,
         "diff": res.get("diff"),
     }
+    if report is not None:
+        record["report"] = report
+    return record
 
 
 def _register_running_job(job_id: str) -> None:
