@@ -113,6 +113,7 @@ class PlaybookJobStatus(BaseModel):
     stdout: list[str] = []
     stats: dict[str, Any] = {}
     #: Changed, failed and unreachable host results: host, task, changed, failed, unreachable, diff.
+    #: A result whose task set the ``nwap_report`` fact is kept as well, with that mapping as ``report``.
     results: list[dict[str, Any]] = []
     canceled: bool = False
     errored: bool = False

@@ -89,3 +89,54 @@ def test_results_survive_job_completion_and_reach_the_response_model() -> None:
     status = get_job_status("job-done")
     assert status is not None
     assert PlaybookJobStatus(job_id=uuid4(), **status).results[0]["diff"] == DIFF
+
+
+REPORT = {"version": "7.16.1", "staged": "7.18.1", "staged_where": "staged", "outcome": "ok", "message": ""}
+
+
+def test_unchanged_result_with_a_report_is_recorded() -> None:
+    handler = _handler("job-report")
+    handler(_event("runner_on_ok", res={"changed": False, "ansible_facts": {"nwap_report": REPORT}}))
+
+    assert _results("job-report") == [
+        {
+            "host": "vpn-core-1",
+            "task": "Configure peers",
+            "changed": False,
+            "failed": False,
+            "unreachable": False,
+            "diff": None,
+            "report": REPORT,
+        }
+    ]
+
+
+def test_failed_result_keeps_its_report() -> None:
+    handler = _handler("job-failed-report")
+    handler(_event("runner_on_failed", res={"msg": "boom", "ansible_facts": {"nwap_report": REPORT}}))
+
+    (record,) = _results("job-failed-report")
+    assert record["failed"] is True
+    assert record["report"] == REPORT
+
+
+def test_record_without_report_has_no_report_key() -> None:
+    handler = _handler("job-no-report")
+    handler(_event("runner_on_ok", res={"changed": True, "diff": DIFF}))
+
+    (record,) = _results("job-no-report")
+    assert "report" not in record
+
+
+def test_report_that_is_not_a_mapping_is_ignored() -> None:
+    handler = _handler("job-bad-report")
+    handler(_event("runner_on_ok", res={"changed": False, "ansible_facts": {"nwap_report": "x"}}))
+
+    assert _results("job-bad-report") == []
+
+
+def test_other_facts_do_not_cause_a_record() -> None:
+    handler = _handler("job-other-facts")
+    handler(_event("runner_on_ok", res={"changed": False, "ansible_facts": {"foo": 1}}))
+
+    assert _results("job-other-facts") == []
